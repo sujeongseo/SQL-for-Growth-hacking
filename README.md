@@ -1,1 +1,1 @@
-# growthhacking
+# SQL for growth hacking
