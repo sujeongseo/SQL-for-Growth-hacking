@@ -106,4 +106,57 @@ event_date = '2022-08-01'
 AND user_id = 32888
 AND event_name = "click_cart"
 
-#######################################################
+**************************************************************************************
+2025-03-07 
+
+# 피벗 연습 문제 1. 각 퍼널의 유저 수를 집계 (조건 : 2022-08-01 ~ 2022-08-18)
+
+# 풀이 순서 
+# 1. UNNEST 2. PIVOT 3. CONCAT 4. CASE WHEN을 활용한 step_number 5.COUTN(DISTINCT user_pseudo_id)
+# 헷갈리는 문법 
+# CASE WHEN 의 END 자리 + WITH 연속문의 AS 자리 + TIMESTAMP <> DATETIME
+
+WITH basic AS
+(SELECT
+event_date,
+event_timestamp,
+event_name,
+user_id,
+user_pseudo_id,
+platform,
+MAX(if(event_param.key='firebase_screen',event_param.value.string_value,NULL)) AS screen,
+MAX(if(event_param.key='session_id',event_param.value.string_value,NULL)) AS session,
+MAX(if(event_param.key='food_id',event_param.value.int_value,NULL)) AS food,
+
+FROM advanced.app_logs
+CROSS JOIN UNNEST(event_params) AS event_param
+WHERE event_name IN ("screen_view", "click_payment")
+AND event_date BETWEEN '2022-08-01' AND '2022-08-18'
+GROUP BY ALL
+
+)
+,
+filering AS (
+SELECT
+* EXCEPT(event_name, screen, platform),
+CONCAT(event_name,"-",basic.screen) AS screen_view,
+
+FROM basic )
+
+SELECT
+event_date,
+filering.screen_view,
+CASE
+  WHEN screen_view = 'screen_view-welcome' THEN 1
+  WHEN screen_view = 'screen_view-home' THEN 2
+  WHEN screen_view = 'screen_view-food_category' THEN 3
+  WHEN screen_view = 'screen_view-restaurant' THEN 4
+  WHEN screen_view = 'screen_view-cart' THEN 5
+  WHEN screen_view = 'click_payment-cart' THEN 6
+  ELSE NULL
+  END AS step_number,
+COUNT (DISTINCT user_pseudo_id) AS cnt
+FROM filering 
+GROUP BY ALL
+HAVING step_number IS NOT NULL
+ORDER BY event_date, step_number 
