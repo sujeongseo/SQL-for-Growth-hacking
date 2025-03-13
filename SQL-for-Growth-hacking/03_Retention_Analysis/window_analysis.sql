@@ -45,6 +45,21 @@ ORDER BY order_id
 # 사용자별 쿼리를 실행한 총 횟수
 # 전체 개수를 알고 싶다면 → PARTITION BY user만 사용, 날짜별 누적 개수를 알고 싶다면 → PARTITION BY user ORDER BY query_date 추가
 
+-- (최적 답안)
+
+SELECT 
+*,
+COUNT(query_date) OVER(PARTITION BY user) AS total_query_cnt
+FROM advanced.query_logs
+ORDER BY user, query_date
+
+-- # WINDOW 함수와 GROUP BY ALL 을 함께 쓰면 안되는 이유
+-- COUNT()는 원래 윈도우 함수(OVER())로 동작해야 하는데, GROUP BY ALL을 하면서 일반적인 COUNT()처럼 동작해 버립니다.
+-- GROUP BY ALL을 하면 query_date가 같은 행들이 한 줄로 합쳐지면서 데이터가 손실될 가능성이 있습니다.
+-- 반면, GROUP BY 없이 윈도우 함수를 사용하면 기존 데이터 행 개수를 유지한 채 COUNT() 값을 추가할 수 있습니다.
+-- 따라서 GROUP BY ALL을 추가하지 않는 것이 올바른 결과를 얻는 방법입니다.
+
+-- (답안)
 SELECT *,
 COUNT(user) OVER(PARTITION BY user) AS total_query_cnt
 FROM advanced.query_logs
@@ -57,6 +72,29 @@ ORDER BY query_date
 # 1. 연 주차 컬럼 추가 -> 연 주차별 쿼리 수 컬럼 추가 
 # 2. 팀 내 주차별 랭킹 추가 -> 주차별 팀내 1위 조건 걸기
 
+-- (최적 답안)
+# 사전 집계 (GROUP BY ALL)를 사용하여 중복 연산을 줄이기
+# 각 ROW 마다 데이터가 있는 것을 미리 GROUP BY로 정리해서 WINDOW 로 넘어가는 것이 좋다.
+WITH base AS (
+  SELECT
+  user,
+  team,
+  EXTRACT (WEEK FROM query_date) AS week_number,
+  # query_date 없이 user를 COUNT 하면 week_number 대로 집계됨 + GROUP BY ALL
+  COUNT(user) AS query_cnt
+  FROM advanced.query_logs
+  GROUP BY ALL
+)
+
+SELECT
+*,
+RANK() OVER (PARTITION BY team, week_number ORDER BY query_cnt DESC) AS rk,
+FROM base
+QUALIFY rk = 1
+ORDER BY week_number, team
+
+
+-- (답안)
 # PARTIRION BY 에 두 개 이상 인자 들어가는 경우 헷갈림
 
 WITH week_query AS (
@@ -91,6 +129,27 @@ ORDER BY week_number
 # WINDOW 연습 문제 3
 # 쿼리를 실행한 시점 기준 1주 전에 쿼리 실행 수를 별도의 컬럼으로 확인
 
+-- (최적 답안)
+# 사전 집계 (GROUP BY ALL) 후 LAG 적용 → 성능 최적화
+-- WITH base AS (
+--   SELECT
+--   user,
+--   team,
+--   EXTRACT (WEEK FROM query_date) AS week_number,
+--   # query_date 없이 user를 COUNT 하면 week_number 대로 집계됨 + GROUP BY ALL
+--   COUNT(user) AS query_cnt
+--   FROM advanced.query_logs
+--   GROUP BY ALL
+-- )
+
+-- SELECT
+-- *,
+-- LAG(query_cnt) OVER (PARTITION BY user ORDER BY week_number) AS prev_query_cnt,
+-- FROM base
+-- ORDER BY team, user
+
+
+-- (답안)
 WITH week_number AS (
 SELECT
 *,
@@ -127,6 +186,24 @@ FROM advanced.query_logs
 GROUP BY ALL
 ORDER BY query_date)
 
+
+# 4. 일자 별로 유저가 실행한 누적 쿼리 수 작성
+# Deflaut Frame : ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+WITH base AS (
+  SELECT  
+  user,
+  team,
+  query_date,
+  COUNT(user) AS query_cnt
+  FROM advanced.query_logs
+  GROUP BY ALL
+)
+
+SELECT 
+*,
+SUM(query_cnt) OVER (PARTITION BY user ORDER BY query_date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cumulative_cnt
+
+FROM base
 
 ******************************************************************
 
