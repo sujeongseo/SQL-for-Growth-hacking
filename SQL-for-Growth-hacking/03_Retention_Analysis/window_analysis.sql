@@ -60,10 +60,10 @@ ORDER BY user, query_date
 -- 따라서 GROUP BY ALL을 추가하지 않는 것이 올바른 결과를 얻는 방법입니다.
 
 -- (답안)
-SELECT *,
-COUNT(user) OVER(PARTITION BY user) AS total_query_cnt
-FROM advanced.query_logs
-ORDER BY query_date
+-- SELECT *,
+-- COUNT(user) OVER(PARTITION BY user) AS total_query_cnt
+-- FROM advanced.query_logs
+-- ORDER BY query_date
 
 
 # WINDOW 연습 문제 2
@@ -95,100 +95,83 @@ ORDER BY week_number, team
 
 
 -- (답안)
-# PARTIRION BY 에 두 개 이상 인자 들어가는 경우 헷갈림
+-- # PARTIRION BY 에 두 개 이상 인자 들어가는 경우 헷갈림
 
-WITH week_query AS (
-SELECT 
-*,
-EXTRACT (WEEK FROM query_date) AS week_number, # EXTRACT 사용하여 연 주차 컬럼 추가
-FROM advanced.query_logs )
+-- WITH week_query AS (
+-- SELECT 
+-- *,
+-- EXTRACT (WEEK FROM query_date) AS week_number, # EXTRACT 사용하여 연 주차 컬럼 추가
+-- FROM advanced.query_logs )
 
-, week_cnt AS (
-SELECT 
-*,
-COUNT(user) OVER (PARTITION BY user ORDER BY week_number) AS week_cnt, # 연 주차별 user의 쿼리 수 COUNT
-FROM week_query wq )
+-- , week_cnt AS (
+-- SELECT 
+-- *,
+-- COUNT(user) OVER (PARTITION BY user ORDER BY week_number) AS week_cnt, # 연 주차별 user의 쿼리 수 COUNT
+-- FROM week_query wq )
 
-, team_rank AS (
-SELECT 
-*,
-RANK() OVER (PARTITION BY week_number, team ORDER BY week_cnt DESC) AS team_rank, # 연 주차별, 팀별 쿼리 수 RANK
-FROM week_cnt wc)
+-- , team_rank AS (
+-- SELECT 
+-- *,
+-- RANK() OVER (PARTITION BY week_number, team ORDER BY week_cnt DESC) AS team_rank, # 연 주차별, 팀별 쿼리 수 RANK
+-- FROM week_cnt wc)
 
-SELECT
-user,
-team,
-week_number,
-week_cnt,
-team_rank
-FROM team_rank tr
-WHERE tr.team_rank = 1
-GROUP BY ALL
-ORDER BY week_number
+-- SELECT
+-- user,
+-- team,
+-- week_number,
+-- week_cnt,
+-- team_rank
+-- FROM team_rank tr
+-- WHERE tr.team_rank = 1
+-- GROUP BY ALL
+-- ORDER BY week_number
 
 # WINDOW 연습 문제 3
 # 쿼리를 실행한 시점 기준 1주 전에 쿼리 실행 수를 별도의 컬럼으로 확인
 
 -- (최적 답안)
 # 사전 집계 (GROUP BY ALL) 후 LAG 적용 → 성능 최적화
--- WITH base AS (
---   SELECT
---   user,
---   team,
---   EXTRACT (WEEK FROM query_date) AS week_number,
---   # query_date 없이 user를 COUNT 하면 week_number 대로 집계됨 + GROUP BY ALL
---   COUNT(user) AS query_cnt
---   FROM advanced.query_logs
---   GROUP BY ALL
--- )
+WITH base AS (
+  SELECT
+  user,
+  team,
+  EXTRACT (WEEK FROM query_date) AS week_number,
+  # query_date 없이 user를 COUNT 하면 week_number 대로 집계됨 + GROUP BY ALL
+  COUNT(user) AS query_cnt
+  FROM advanced.query_logs
+  GROUP BY ALL
+)
 
--- SELECT
--- *,
--- LAG(query_cnt) OVER (PARTITION BY user ORDER BY week_number) AS prev_query_cnt,
--- FROM base
--- ORDER BY team, user
-
+SELECT
+*,
+LAG(query_cnt) OVER (PARTITION BY user ORDER BY week_number) AS prev_query_cnt,
+FROM base
+ORDER BY team, user
 
 -- (답안)
-WITH week_number AS (
-SELECT
-*,
-EXTRACT (WEEK FROM query_date) AS week_number, # 1. weeknumber 컬럼 생성
-FROM advanced.query_logs )
+-- WITH week_number AS (
+-- SELECT
+-- *,
+-- EXTRACT (WEEK FROM query_date) AS week_number, # 1. weeknumber 컬럼 생성
+-- FROM advanced.query_logs )
 
+-- , week_cnt AS (
+-- SELECT
+-- *,
+-- COUNT(user) OVER (PARTITION BY user, week_number) AS week_cnt, # 2. 유저별 week count 컬럼 생성
+-- FROM week_number wn)
 
-, week_cnt AS (
-SELECT
-*,
-COUNT(user) OVER (PARTITION BY user, week_number) AS week_cnt, # 2. 유저별 week count 컬럼 생성
-FROM week_number wn)
+-- SELECT
+-- * EXCEPT(query_date),
+-- LAG(wc.week_cnt) OVER(PARTITION BY user ORDER BY week_number) AS last_week_cnt # 3. LAG(가져올 컬럼) OVER (PARTITION BY 기준 ORDER BY 연주차)
 
-SELECT
-* EXCEPT(query_date),
-LAG(wc.week_cnt) OVER(PARTITION BY user ORDER BY week_number) AS last_week_cnt # 3. LAG(가져올 컬럼) OVER (PARTITION BY 기준 ORDER BY 연주차)
+-- FROM week_cnt wc
+-- GROUP BY ALL # 4. 그룹화  
 
-FROM week_cnt wc
-GROUP BY ALL # 4. 그룹화  
+-- # WINDOW 연습 문제 4. 일자 별로 유저가 실행한 누적 쿼리 수 작성
+-- # Deflaut Frame : ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
 
-# WINDOW 연습 문제 3
-# 일자 별로 유저가 실행한 누적 쿼리 수
-
-SELECT 
-*,
-SUM(query_cnt) OVER (PARTITION BY user ORDER BY query_date 
-ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cumulative_query_cnt, # 일자별 누적 쿼리 수 SUM
-
-FROM (
-SELECT 
-*,
-COUNT(user) OVER (PARTITION BY user ORDER BY query_date) query_cnt, # 일자별 쿼리 수 COUNT
-FROM advanced.query_logs 
-GROUP BY ALL
-ORDER BY query_date)
-
-
-# 4. 일자 별로 유저가 실행한 누적 쿼리 수 작성
-# Deflaut Frame : ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+-- (최적 답안)
 WITH base AS (
   SELECT  
   user,
@@ -205,48 +188,27 @@ SUM(query_cnt) OVER (PARTITION BY user ORDER BY query_date ROWS BETWEEN UNBOUNDE
 
 FROM base
 
+-- (답안)
+-- SELECT 
+-- *,
+-- SUM(query_cnt) OVER (PARTITION BY user ORDER BY query_date 
+-- ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cumulative_query_cnt, # 일자별 누적 쿼리 수 SUM
+
+-- FROM (
+-- SELECT 
+-- *,
+-- COUNT(user) OVER (PARTITION BY user ORDER BY query_date) query_cnt, # 일자별 쿼리 수 COUNT
+-- FROM advanced.query_logs 
+-- GROUP BY ALL
+-- ORDER BY query_date)
+
 ******************************************************************
 
-# 5. 주문 횟 수가 없는 NULL 값에 이전 날짜 값을 채워주기 
+# # WINDOW 연습 문제 5. 주문 횟 수가 없는 NULL 값에 이전 날짜 값을 채워주기 
 # 이전 날짜도 null 이면 어떻게 해야하지?
+# LAST_VALUE(인자 IGNORE NULLS) 사용하기
 
-
-WITH raw_data AS (
-SELECT DATE '2024-05-01' AS date, 15 AS number_of_orders UNION ALL SELECT DATE '2024-05-02', 13 UNION ALL
-SELECT DATE '2024-05-03', NULL UNION ALL
-SELECT DATE '2024-05-04', 16 UNION ALL
-SELECT DATE '2024-05-05', NULL UNION ALL
-SELECT DATE '2024-05-06', 18 UNION ALL
-SELECT DATE '2024-05-07', 20 UNION ALL
-SELECT DATE '2024-05-08', NULL UNION ALL
-SELECT DATE '2024-05-09', 13 UNION ALL
-SELECT DATE '2024-05-10', 14 UNION ALL
-SELECT DATE '2024-05-11', NULL UNION ALL
-SELECT DATE '2024-05-12', NULL
-)
-
-, lag AS (
-SELECT
-*,
-LAG (number_of_orders, 1) OVER (ORDER BY rd.date) AS lag1, # 1. 이전 주문 수 칼럼
-LAG (number_of_orders, 2) OVER (ORDER BY rd.date) AS lag2, # 2. 이이전 주문 수 칼럼
-
-FROM raw_data rd )
-, orders AS (
-SELECT 
-*,
-IF (number_of_orders IS NOT NULL, l.number_of_orders, l.lag1) AS lag_num_1,
-FROM lag l
-)
-
-SELECT 
-date,
-IF (lag_num_1 IS NOT NULL, lag_num_1, lag2 ) AS lag_num_2
-FROM orders o
-
-
-# 6. 2일 전 ~ 현재 데이터의 평균을 구하는 쿼리 작성(이동평균)
-
+(최적 답안)
 
 WITH raw_data AS (
 SELECT DATE '2024-05-01' AS date, 15 AS number_of_orders UNION ALL SELECT DATE '2024-05-02', 13 UNION ALL
@@ -262,33 +224,172 @@ SELECT DATE '2024-05-11', NULL UNION ALL
 SELECT DATE '2024-05-12', NULL
 )
 
-, lag AS (
+, value AS(
+  SELECT  
+  *,
+  LAST_VALUE(number_of_orders IGNORE NULLS) OVER (ORDER BY date) AS value
+  FROM raw_data
+)
+
 SELECT
-*,
-LAG (number_of_orders, 1) OVER (ORDER BY rd.date) AS lag1, # 1. 이전 주문 수 칼럼
-LAG (number_of_orders, 2) OVER (ORDER BY rd.date) AS lag2, # 2. 이이전 주문 수 칼럼
+v.date,
+v.value,
+FROM value v
 
-FROM raw_data rd )
-, orders AS (
-SELECT 
-*,
-IF (number_of_orders IS NOT NULL, l.number_of_orders, l.lag1) AS lag_num_1,
-FROM lag l
+
+-- (답안)
+-- WITH raw_data AS (
+-- SELECT DATE '2024-05-01' AS date, 15 AS number_of_orders UNION ALL SELECT DATE '2024-05-02', 13 UNION ALL
+-- SELECT DATE '2024-05-03', NULL UNION ALL
+-- SELECT DATE '2024-05-04', 16 UNION ALL
+-- SELECT DATE '2024-05-05', NULL UNION ALL
+-- SELECT DATE '2024-05-06', 18 UNION ALL
+-- SELECT DATE '2024-05-07', 20 UNION ALL
+-- SELECT DATE '2024-05-08', NULL UNION ALL
+-- SELECT DATE '2024-05-09', 13 UNION ALL
+-- SELECT DATE '2024-05-10', 14 UNION ALL
+-- SELECT DATE '2024-05-11', NULL UNION ALL
+-- SELECT DATE '2024-05-12', NULL
+-- )
+
+-- , lag AS (
+-- SELECT
+-- *,
+-- LAG (number_of_orders, 1) OVER (ORDER BY rd.date) AS lag1, # 1. 이전 주문 수 칼럼
+-- LAG (number_of_orders, 2) OVER (ORDER BY rd.date) AS lag2, # 2. 이이전 주문 수 칼럼
+
+-- FROM raw_data rd )
+-- , orders AS (
+-- SELECT 
+-- *,
+-- IF (number_of_orders IS NOT NULL, l.number_of_orders, l.lag1) AS lag_num_1,
+-- FROM lag l
+-- )
+
+-- SELECT 
+-- date,
+-- IF (lag_num_1 IS NOT NULL, lag_num_1, lag2 ) AS lag_num_2
+-- FROM orders o
+
+
+# # WINDOW 연습 문제 6. 2일 전 ~ 현재 데이터의 평균을 구하는 쿼리 작성(이동평균)
+
+(최적 답안)
+WITH raw_data AS (
+SELECT DATE '2024-05-01' AS date, 15 AS number_of_orders UNION ALL SELECT DATE '2024-05-02', 13 UNION ALL
+SELECT DATE '2024-05-03', NULL UNION ALL
+SELECT DATE '2024-05-04', 16 UNION ALL
+SELECT DATE '2024-05-05', NULL UNION ALL
+SELECT DATE '2024-05-06', 18 UNION ALL
+SELECT DATE '2024-05-07', 20 UNION ALL
+SELECT DATE '2024-05-08', NULL UNION ALL
+SELECT DATE '2024-05-09', 13 UNION ALL
+SELECT DATE '2024-05-10', 14 UNION ALL
+SELECT DATE '2024-05-11', NULL UNION ALL
+SELECT DATE '2024-05-12', NULL
 )
 
-, avg_null AS (
-SELECT 
-date,
-IF (lag_num_1 IS NOT NULL, lag_num_1, lag2 ) AS lag_num_2
-FROM orders o
+, value AS(
+  SELECT  
+  *,
+  LAST_VALUE(number_of_orders IGNORE NULLS) OVER (ORDER BY date) AS value
+  FROM raw_data
 )
 
-SELECT 
-*,
-AVG(lag_num_2) OVER (ORDER BY date ROWS BETWEEN 2 PRECEDING AND CURRENT ROW)
-FROM avg_null an
+SELECT
+v.date,
+v.value,
+AVG(value) OVER(ORDER BY v.date ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS moving_avg
+FROM value v
+
+
+-- (답안)
+-- WITH raw_data AS (
+-- SELECT DATE '2024-05-01' AS date, 15 AS number_of_orders UNION ALL SELECT DATE '2024-05-02', 13 UNION ALL
+-- SELECT DATE '2024-05-03', NULL UNION ALL
+-- SELECT DATE '2024-05-04', 16 UNION ALL
+-- SELECT DATE '2024-05-05', NULL UNION ALL
+-- SELECT DATE '2024-05-06', 18 UNION ALL
+-- SELECT DATE '2024-05-07', 20 UNION ALL
+-- SELECT DATE '2024-05-08', NULL UNION ALL
+-- SELECT DATE '2024-05-09', 13 UNION ALL
+-- SELECT DATE '2024-05-10', 14 UNION ALL
+-- SELECT DATE '2024-05-11', NULL UNION ALL
+-- SELECT DATE '2024-05-12', NULL
+-- )
+
+-- , lag AS (
+-- SELECT
+-- *,
+-- LAG (number_of_orders, 1) OVER (ORDER BY rd.date) AS lag1, # 1. 이전 주문 수 칼럼
+-- LAG (number_of_orders, 2) OVER (ORDER BY rd.date) AS lag2, # 2. 이이전 주문 수 칼럼
+
+-- FROM raw_data rd )
+-- , orders AS (
+-- SELECT 
+-- *,
+-- IF (number_of_orders IS NOT NULL, l.number_of_orders, l.lag1) AS lag_num_1,
+-- FROM lag l
+-- )
+
+-- , avg_null AS (
+-- SELECT 
+-- date,
+-- IF (lag_num_1 IS NOT NULL, lag_num_1, lag2 ) AS lag_num_2
+-- FROM orders o
+-- )
+
+-- SELECT 
+-- *,
+-- AVG(lag_num_2) OVER (ORDER BY date ROWS BETWEEN 2 PRECEDING AND CURRENT ROW)
+-- FROM avg_null an
+
 
 **********************************************************
 
+# WINDOW 연습 문제 7. 이전 이벤트 로그와 20초가 지나면 새로운 커스텀 세션을 만들어주세요. 
+# 하루에 접속을 여러번 하는 서비스면 session 기반 분석이 좋고, 아니라면 일자별 user 집계가 낫다.
 
+WITH base AS (
+SELECT
+event_date,
+DATETIME(TIMESTAMP_MICROS(event_timestamp), 'Asia/Seoul') AS event_datetime,
+event_name,
+user_pseudo_id,
+FROM advanced.app_logs 
+)
+, date_time AS (
+SELECT
+LAG(b.event_datetime) OVER (PARTITION BY user_pseudo_id ORDER BY event_datetime) AS prev_event_datetime,
+*
+FROM base b
+)
 
+, diff AS (
+SELECT 
+event_date,
+prev_event_datetime,
+event_datetime,
+DATETIME_DIFF(dt.event_datetime, dt.prev_event_datetime, SECOND) AS diff_second,
+user_pseudo_id
+FROM date_time dt
+)
+
+, session AS (
+SELECT
+*,
+CASE
+  WHEN diff_second IS NULL THEN 1
+  WHEN diff_second >= 20 THEN 1
+  ELSE 0
+  END AS new_session
+FROM diff d
+)
+
+SELECT
+user_pseudo_id,
+event_datetime,
+diff_second,
+SUM(new_session) OVER (ORDER BY event_datetime, user_pseudo_id  ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS custom_session_id
+FROM session s
+ORDER BY event_datetime
